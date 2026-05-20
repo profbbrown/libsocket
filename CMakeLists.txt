@@ -1,5 +1,5 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 PROJECT(libsocket)
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
 # Header conf
 SET(VERSION 2.4)
@@ -7,14 +7,22 @@ SET(VERSION 2.4)
 IF( CMAKE_SYSTEM_NAME STREQUAL "Linux" )
     SET(IS_FREEBSD 0)
     SET(IS_LINUX 1)
+    SET(IS_MACOS 0)
     SET(IS_SUNOS 0)
 ELSEIF( CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" )
     SET(IS_FREEBSD 1)
     SET(IS_LINUX 0)
+    SET(IS_MACOS 0)
+    SET(IS_SUNOS 0)
+ELSEIF( CMAKE_SYSTEM_NAME STREQUAL "Darwin" )
+    SET(IS_FREEBSD 0)
+    SET(IS_LINUX 0)
+    SET(IS_MACOS 1)
     SET(IS_SUNOS 0)
 ELSEIF( CMAKE_SYSTEM_NAME STREQUAL "SunOS" )
     SET(IS_FREEBSD 0)
     SET(IS_LINUX 0)
+    SET(IS_MACOS 0)
     SET(IS_SUNOS 1)
 ENDIF()
 
@@ -29,7 +37,7 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 ADD_DEFINITIONS(-Wall -Wextra)
 
 IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    SET(CMAKE_INSTALL_PREFIX "/usr")
+    SET(CMAKE_INSTALL_PREFIX "/usr/local")
 ENDIF()
 
 # Install directories
@@ -42,7 +50,6 @@ ADD_SUBDIRECTORY(headers/)
 IF( NOT IS_SUNOS )
     ADD_SUBDIRECTORY(C++/)
     ADD_DEPENDENCIES(socket++ socket)
-
 ENDIF()
 
 IF(EXISTS "${CMAKE_ROOT}/Modules/CPack.cmake")
@@ -76,8 +83,13 @@ foreach(p LIB BIN INCLUDE CMAKE)
   endif()
 endforeach()
 
-export(TARGETS socket++ socket_int
-  FILE "${PROJECT_BINARY_DIR}/libsocketTargets.cmake")
+IF( NOT IS_SUNOS )
+    export(TARGETS socket++ socket_int
+      FILE "${PROJECT_BINARY_DIR}/libsocketTargets.cmake")
+ELSE()
+    export(TARGETS socket_int
+      FILE "${PROJECT_BINARY_DIR}/libsocketTargets.cmake")
+ENDIF()
 
 export(PACKAGE libsocket)
 

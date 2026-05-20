@@ -7,19 +7,19 @@ Status](https://api.travis-ci.org/dermesser/libsocket.png)](https://travis-ci.or
 
 ## BUILDING libsocket
 
+CMake 3.10 or later is required. Install via your package manager: `brew install cmake` (macOS),
+`apt install cmake` (Debian/Ubuntu).
+
 If you want to install both libsocket and libsocket++, simply use this command:
 
     $ mkdir build && cd build
     $ cmake ..
     $ make # or make install
 
-This installs the SOs libsocket.so and libsocket++.so to /usr/lib/ and the header files to
-/usr/include/libsocket. You may change these paths in the CMakeLists.txt file in the project root.
+This installs the SOs libsocket.so and libsocket++.so to /usr/local/lib/ and the header files to
+/usr/local/include/libsocket. You may change these paths in the CMakeLists.txt file in the project root.
 
 Note the changed library name on SunOS, where it is called libsocket\_hl (for "high level").
-
-CMake is required to support object libraries, which is the case in versions higher than or equal to
-2.8.
 
 ## WHAT IS libsocket AND WHY SHOULD I USE IT?
 

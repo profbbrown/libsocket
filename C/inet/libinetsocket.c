@@ -1,13 +1,15 @@
-#ifndef _GNU_SOURCE
+#if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif
 
 #include "conf.h"
 #define LIBSOCKET_VERSION 2.4
-#ifdef BD_ANDROID
-#define LIBSOCKET_LINUX 0
-#else
+#ifndef LIBSOCKET_LINUX
+#if defined(__linux__) && !defined(BD_ANDROID)
 #define LIBSOCKET_LINUX 1
+#else
+#define LIBSOCKET_LINUX 0
+#endif
 #endif
 
 #include <errno.h>
@@ -21,6 +23,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <fcntl.h>   // O_NONBLOCK (macOS/BSD)
 #include <unistd.h>  // read()/write()
 
 /**
@@ -203,8 +206,12 @@ int create_inet_stream_socket(const char *host, const char *service,
 
         int CON_RES = connect(sfd, result_check->ai_addr,
                               result_check->ai_addrlen);
-        if ((CON_RES != -1) || (CON_RES == -1 && (flags |= SOCK_NONBLOCK) && ((errno == EINPROGRESS) || (errno == EALREADY) || (errno == EINTR))))     // connected without error, or, connected with errno being one of these important states
-             break;
+#if LIBSOCKET_LINUX
+        if ((CON_RES != -1) || (CON_RES == -1 && (flags & SOCK_NONBLOCK) && ((errno == EINPROGRESS) || (errno == EALREADY) || (errno == EINTR))))
+#else
+        if ((CON_RES != -1) || (CON_RES == -1 && (fcntl(sfd, F_GETFL) & O_NONBLOCK) && ((errno == EINPROGRESS) || (errno == EALREADY) || (errno == EINTR))))
+#endif
+            break;
        
         close(sfd);
         sfd = -1;
@@ -823,6 +830,7 @@ int accept_inet_stream_socket(int sfd, char *src_host, size_t src_host_len,
                                           &addrlen, accept_flags))))  // blocks
         return -1;
 #else
+    (void)accept_flags;
     if (-1 ==
         check_error((client_sfd = accept(sfd, (struct sockaddr *)&client_info,
                                          &addrlen))))  // blocks
@@ -971,7 +979,7 @@ int get_address_family(const char *hostname) {
  * @retval >=0 A valid file descriptor.
  *
  */
-#ifdef LIBSOCKET_LINUX
+#if LIBSOCKET_LINUX
 int create_multicast_socket(const char *group, const char *port,
                             const char *if_name) {
     int sfd, return_value;

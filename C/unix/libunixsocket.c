@@ -1,10 +1,19 @@
-#ifndef _GNU_SOURCE
+#if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE  // accept4()
 #endif
 
 #include <conf.h>
 
+#ifndef LIBSOCKET_LINUX
+#if defined(__linux__) && !defined(BD_ANDROID)
+#define LIBSOCKET_LINUX 1
+#else
+#define LIBSOCKET_LINUX 0
+#endif
+#endif
+
 #include <errno.h>
+#include <stddef.h>  // offsetof()
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,6 +115,14 @@ static int set_unix_socket_path(struct sockaddr_un* saddr, const char* path_or_n
     if (path_or_name[0] != 0) {
         strncpy(saddr->sun_path, path_or_name, sizeof(saddr->sun_path) - 1);
     } else {
+#if !LIBSOCKET_LINUX
+        // Abstract socket addresses are a Linux-only kernel feature.
+        errno = EAFNOSUPPORT;
+#ifdef VERBOSE
+        debug_write("set_unix_socket_path: Abstract socket addresses are not supported on this platform\n");
+#endif
+        return -1;
+#else
         // Abstract socket address.
         // Make sure this is not a nulled memory region.
         if (path_or_name[1] == 0) {
@@ -124,6 +141,7 @@ static int set_unix_socket_path(struct sockaddr_un* saddr, const char* path_or_n
             return -1;
         }
         memcpy(saddr->sun_path, path_or_name, max_len);
+#endif
     }
     return 0;
 }
@@ -170,7 +188,7 @@ int create_unix_stream_socket(const char* path, int flags) {
 
     if (-1 == check_error(
                   connect(sfd, (struct sockaddr*)&saddr,
-                          sizeof(saddr.sun_family) + pathlen))) {
+                          (socklen_t)(offsetof(struct sockaddr_un, sun_path) + pathlen)))) {
         close(sfd);
         return -1;
     }
@@ -222,7 +240,7 @@ int create_unix_dgram_socket(const char* bind_path, int flags) {
             pathlen = sizeof(saddr.sun_path);
 
         bind(sfd, (struct sockaddr*)&saddr,
-             sizeof(saddr.sun_family) + pathlen);
+             (socklen_t)(offsetof(struct sockaddr_un, sun_path) + pathlen));
     }
 
     return sfd;
@@ -278,7 +296,7 @@ int connect_unix_dgram_socket(int sfd, const char* path) {
 
     if (-1 == check_error(connect(
                   sfd, (struct sockaddr*)&new_addr,
-                  sizeof(new_addr.sun_family) + pathlen)))
+                  (socklen_t)(offsetof(struct sockaddr_un, sun_path) + pathlen))))
         return -1;
 
     return 0;
@@ -396,7 +414,7 @@ int create_unix_server_socket(const char* path, int socktype, int flags) {
 
     if (-1 ==
         check_error(bind(sfd, (struct sockaddr*)&saddr,
-                         sizeof(saddr.sun_family) + pathlen)))
+                         (socklen_t)(offsetof(struct sockaddr_un, sun_path) + pathlen))))
         return -1;
 
     if (type == SOCK_STREAM) {
@@ -423,6 +441,7 @@ int accept_unix_stream_socket(int sfd, int flags) {
 #if LIBSOCKET_LINUX
     if (-1 == check_error(cfd = accept4(sfd, 0, 0, flags))) return -1;
 #else
+    (void)flags;
     if (-1 == check_error(cfd = accept(sfd, 0, 0))) return -1;
 #endif
     return cfd;
