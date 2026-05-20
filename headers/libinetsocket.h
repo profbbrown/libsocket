@@ -81,10 +81,8 @@ extern int accept_inet_stream_socket(int sfd, char* src_host,
                                      int accept_flags);
 extern int get_address_family(const char* hostname);
 
-#ifdef __linux__
 extern int create_multicast_socket(const char* group, const char* port,
                                    const char* local);
-#endif
 
 #ifdef __cplusplus
 #ifdef MIXED
