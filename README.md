@@ -94,6 +94,21 @@ Other than on Linux systems libsocket is known to work as well (although not rea
 tested) on FreeBSD systems with working C++11 stack. The library has been tested on a
 FreeBSD 10.0-RC4 amd64 system using the shipped compilers (which is clang 3.3).
 
+### macOS
+
+libsocket is supported on macOS (Darwin) with a C++11-capable compiler. Both
+the C and C++ library parts are built. Install the required tools with Homebrew:
+
+    $ brew install cmake
+
+One Linux-specific feature is not available on macOS:
+
+* Abstract UNIX domain socket addresses are a Linux kernel extension and are
+  not supported.
+
+Note that `epoll` is also Linux-only; use the `select`-based abstraction
+(`libsocket++`) instead.
+
 ### SunOS: OpenIndiana, (Solaris?)
 
 The library part written in C works (partly) also on OpenIndiana; this has been verified using
