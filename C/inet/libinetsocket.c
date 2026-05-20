@@ -26,6 +26,10 @@
 #include <fcntl.h>   // O_NONBLOCK (macOS/BSD)
 #include <unistd.h>  // read()/write()
 
+#ifndef IPV6_ADD_MEMBERSHIP
+#define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP  // POSIX name used on macOS/BSD
+#endif
+
 /**
  * @file    libinetsocket.c
  *
@@ -979,23 +983,17 @@ int get_address_family(const char *hostname) {
  * @retval >=0 A valid file descriptor.
  *
  */
-#if LIBSOCKET_LINUX
 int create_multicast_socket(const char *group, const char *port,
                             const char *if_name) {
     int sfd, return_value;
     struct sockaddr maddr, localif;
     struct addrinfo hints, *result;
-    struct ip_mreqn mreq4;
     struct ipv6_mreq mreq6;
-    struct in_addr any;
-    struct ifreq interface;
 
     memset(&maddr, 0, sizeof(maddr));
     memset(&localif, 0, sizeof(localif));
-    memset(&mreq4, 0, sizeof(mreq4));
     memset(&mreq6, 0, sizeof(mreq6));
     memset(&hints, 0, sizeof(hints));
-    memset(&interface, 0, sizeof(interface));
 
     if (-1 == check_error(sfd = create_inet_server_socket(
                               group, port, LIBSOCKET_UDP, LIBSOCKET_BOTH, 0))) {
@@ -1014,19 +1012,19 @@ int create_multicast_socket(const char *group, const char *port,
         close(sfd);
         freeaddrinfo(result);
         errno = errno_saved;
-
         return -1;
     }
 
     if (result->ai_family == AF_INET) {
-        // Result is IPv4 address.
+#if LIBSOCKET_LINUX
+        // Linux: ip_mreqn allows specifying interface by index.
+        struct ip_mreqn mreq4;
+        memset(&mreq4, 0, sizeof(mreq4));
         mreq4.imr_multiaddr = ((struct sockaddr_in *)result->ai_addr)->sin_addr;
 
-        if (if_name == NULL) {
-            mreq4.imr_ifindex = 0;
-            any.s_addr = INADDR_ANY;
-            mreq4.imr_address = any;
-        } else {
+        if (if_name != NULL) {
+            struct ifreq interface;
+            memset(&interface, 0, sizeof(interface));
             memcpy(interface.ifr_name, if_name,
                    strlen(if_name) > IFNAMSIZ ? IFNAMSIZ : strlen(if_name));
 
@@ -1037,7 +1035,6 @@ int create_multicast_socket(const char *group, const char *port,
                 errno = errno_saved;
                 return -1;
             }
-
             mreq4.imr_ifindex = interface.ifr_ifindex;
         }
 
@@ -1057,29 +1054,61 @@ int create_multicast_socket(const char *group, const char *port,
             errno = errno_saved;
             return -1;
         }
+#else
+        // macOS/BSD: ip_mreq specifies interface by IP address, not index.
+        struct ip_mreq mreq4;
+        memset(&mreq4, 0, sizeof(mreq4));
+        mreq4.imr_multiaddr = ((struct sockaddr_in *)result->ai_addr)->sin_addr;
 
-        // Setup finished.
-        //
-    } else if (result->ai_family == AF_INET6) {
-        mreq6.ipv6mr_multiaddr =
-            ((struct sockaddr_in6 *)result->ai_addr)->sin6_addr;
-        mreq6.ipv6mr_interface = 0;
+        if (if_name == NULL) {
+            mreq4.imr_interface.s_addr = INADDR_ANY;
+        } else {
+            struct ifreq interface;
+            memset(&interface, 0, sizeof(interface));
+            strncpy(interface.ifr_name, if_name, IFNAMSIZ - 1);
 
-        if (if_name == NULL)
-            mreq6.ipv6mr_interface = 0;
-        else {
-            memcpy(interface.ifr_name, if_name,
-                   strlen(if_name) > IFNAMSIZ ? IFNAMSIZ : strlen(if_name));
-
-            if (-1 == check_error(ioctl(sfd, SIOCGIFINDEX, &interface))) {
+            if (-1 == check_error(ioctl(sfd, SIOCGIFADDR, &interface))) {
                 int errno_saved = errno;
                 close(sfd);
                 freeaddrinfo(result);
                 errno = errno_saved;
                 return -1;
             }
+            mreq4.imr_interface =
+                ((struct sockaddr_in *)&interface.ifr_addr)->sin_addr;
+        }
 
-            mreq6.ipv6mr_interface = interface.ifr_ifindex;
+        if (-1 == check_error(setsockopt(sfd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                                         &mreq4, sizeof(struct ip_mreq)))) {
+            int errno_saved = errno;
+            close(sfd);
+            freeaddrinfo(result);
+            errno = errno_saved;
+            return -1;
+        }
+        if (-1 == check_error(setsockopt(sfd, IPPROTO_IP, IP_MULTICAST_IF,
+                                         &mreq4.imr_interface,
+                                         sizeof(struct in_addr)))) {
+            int errno_saved = errno;
+            close(sfd);
+            freeaddrinfo(result);
+            errno = errno_saved;
+            return -1;
+        }
+#endif
+    } else if (result->ai_family == AF_INET6) {
+        mreq6.ipv6mr_multiaddr =
+            ((struct sockaddr_in6 *)result->ai_addr)->sin6_addr;
+
+        if (if_name != NULL) {
+            mreq6.ipv6mr_interface = if_nametoindex(if_name);
+            if (mreq6.ipv6mr_interface == 0) {
+                int errno_saved = errno;
+                close(sfd);
+                freeaddrinfo(result);
+                errno = errno_saved;
+                return -1;
+            }
         }
 
         if (-1 == check_error(setsockopt(sfd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
@@ -1104,8 +1133,6 @@ int create_multicast_socket(const char *group, const char *port,
     freeaddrinfo(result);
     return sfd;
 }
-
-#endif
 
 /**
  * @}
